@@ -1,3 +1,16 @@
+import sys
+import subprocess
+
+# Install and use pysqlite3 to fix ChromaDB
+try:
+    __import__('pysqlite3')
+    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "pysqlite3-binary"])
+    __import__('pysqlite3')
+    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+
+
 
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
