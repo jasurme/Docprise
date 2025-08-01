@@ -6,3 +6,4 @@ PyMuPDF
 chromadb
 pyngrok
 google-generativeai
+cohere
