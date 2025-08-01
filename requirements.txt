@@ -1,10 +1,9 @@
-langchain
-langchain-openai
-langchain-community
 streamlit
-PyMuPDF
-chromadb
-pyngrok
-google-generativeai
-cohere
+langchain
+langchain-community
 langchain-google-genai
+langchain-openai
+faiss-cpu
+pandas
+python-dotenv
+pymupdf
