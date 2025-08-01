@@ -118,7 +118,7 @@ gemini = ChatGoogleGenerativeAI(
 
 qa_rag_chain = (
     {
-        "context": itemgetter("question")
+        "context": itemgetter("question"),
         retriever,
         format_docs,
         "question": itemgetter("question")
