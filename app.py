@@ -25,7 +25,7 @@ os.environ["GOOGLE_API_KEY"] = GEMINI_API_KEY if GEMINI_API_KEY else ""
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY if OPENAI_API_KEY else ""
 
 st.set_page_config(page_title="DocPrise: File QA Chatbot", page_icon="🔍")
-st.title("🎯 Surprise Yourself! Let us handle where your information is")
+st.title("Think Different! Every document holds surprises")
 
 # Generate unique session ID
 if "session_id" not in st.session_state:
@@ -84,7 +84,7 @@ def log_to_google_sheets(question, answer, response_time=None):
         sheet.append_row(row_data)
         
         # Show success in sidebar
-        st.sidebar.success("✅ Interaction logged!")
+        st.sidebar.success("✅ Answered")
         
     except Exception as e:
         # Show detailed error for debugging
