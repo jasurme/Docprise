@@ -4,20 +4,23 @@ from langchain_community.chat_message_histories import StreamlitChatMessageHisto
 from langchain_core.callbacks.base import BaseCallbackHandler
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import FAISS  # Changed from Chroma
+from langchain_community.vectorstores import FAISS
 from operator import itemgetter
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 import streamlit as st
 import tempfile
 import os
 import pandas as pd
 
+# Get API keys
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
-os.environ["GOOGLE_API_KEY"] = GEMINI_API_KEY  # Set environment variable
+OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+
+# Set environment variables
+os.environ["GOOGLE_API_KEY"] = GEMINI_API_KEY if GEMINI_API_KEY else ""
+os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY if OPENAI_API_KEY else ""
 
 st.set_page_config(page_title="FileBit: File QA Chatbot", page_icon="🔍")
-
 st.title("Think Different! Let us handle where your information is")
 
 @st.cache_resource(ttl="1h")
@@ -35,13 +38,13 @@ def configure_retriever(uploaded_files):
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=200)
     doc_chunks = text_splitter.split_documents(docs)
 
-    embeddings_model = GoogleGenerativeAIEmbeddings(
-       model="models/embedding-001", 
-       google_api_key=os.getenv("GOOGLE_API_KEY")
-    ) 
+    # Use OpenAI embeddings instead - no async issues!
+    embeddings_model = OpenAIEmbeddings(
+        model="text-embedding-3-small",
+        openai_api_key=os.getenv("OPENAI_API_KEY")
+    )
 
-    vectordb = FAISS.from_documents(doc_chunks, embeddings_model)  # Changed from Chroma
-
+    vectordb = FAISS.from_documents(doc_chunks, embeddings_model)
     return vectordb.as_retriever()
 
 class StreamHandler(BaseCallbackHandler):
@@ -77,7 +80,7 @@ Question: {question}
 Answer: 
 """
 
-qa_prompt = ChatPromptTemplate.from_template(qa_template)  # Fixed variable name
+qa_prompt = ChatPromptTemplate.from_template(qa_template)
 
 def format_docs(docs):
     return "\n\n".join([d.page_content for d in docs])
