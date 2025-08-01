@@ -45,7 +45,7 @@ def configure_retriever(uploaded_files):
     embeddings_model = CohereEmbeddings(model="embed-english-v3.0")
     vectordb = Chroma.from_documents(doc_chunks, embeddings_model)
 
-    retiever = vectordb.as_retriever()
+    retriever = vectordb.as_retriever()
 
     # Define retriever object
     return vectordb.as_retriever()
@@ -116,20 +116,18 @@ gemini = ChatGoogleGenerativeAI(
 )
 
 
-qa_rag_chain = (
-    {
-        "context": itemgetter("question"),
-        retriever,
-        format_docs,
-        "question": itemgetter("question")
-    
-                 
-    },
-    qa_prompt,
-    gemini
-                
 
+from langchain.schema.runnable import RunnableMap
+
+qa_rag_chain = (
+    RunnableMap({
+        "context": itemgetter("question") | retriever | format_docs,
+        "question": itemgetter("question")
+    })
+    | qa_prompt
+    | gemini  # Replace with your Gemini client or LLM
 )
+
 
 
 # Store conversation history in Streamlit session state
