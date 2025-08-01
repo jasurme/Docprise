@@ -7,3 +7,4 @@ chromadb
 pyngrok
 google-generativeai
 cohere
+langchain-google-genai
