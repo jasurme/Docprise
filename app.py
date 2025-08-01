@@ -1,24 +1,10 @@
-import sys
-import subprocess
-
-# Install and use pysqlite3 to fix ChromaDB
-try:
-    __import__('pysqlite3')
-    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
-except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "pysqlite3-binary"])
-    __import__('pysqlite3')
-    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
-
-
-
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_community.chat_message_histories import StreamlitChatMessageHistory
 from langchain_core.callbacks.base import BaseCallbackHandler
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores.chroma import Chroma
+from langchain_community.vectorstores import FAISS  # Changed from Chroma
 from operator import itemgetter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
@@ -26,18 +12,15 @@ import streamlit as st
 import tempfile
 import os
 import pandas as pd
-import cohere
-from langchain.embeddings import CohereEmbeddings
 
-COHERE_API_KEY = st.secrets.get("COHERE_API_KEY") or os.getenv("COHERE_API_KEY")
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
+os.environ["GOOGLE_API_KEY"] = GEMINI_API_KEY  # Set environment variable
 
 st.set_page_config(page_title="FileBit: File QA Chatbot", page_icon="🔍")
 
 st.title("Think Different! Let us handle where your information is")
 
 @st.cache_resource(ttl="1h")
-
 def configure_retriever(uploaded_files):
     # Read documents
     docs = []
@@ -49,34 +32,26 @@ def configure_retriever(uploaded_files):
         loader = PyMuPDFLoader(temp_filepath)
         docs.extend(loader.load())
 
-
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=200)
     doc_chunks = text_splitter.split_documents(docs)
 
-  
-  
     embeddings_model = GoogleGenerativeAIEmbeddings(
        model="models/embedding-001", 
-       google_api_key=os.getenv("GOOGLE_API_KEY") ) 
+       google_api_key=os.getenv("GOOGLE_API_KEY")
+    ) 
 
-    vectordb = Chroma.from_documents(doc_chunks, embeddings_model)
+    vectordb = FAISS.from_documents(doc_chunks, embeddings_model)  # Changed from Chroma
 
-    retriever = vectordb.as_retriever()
-
-    # Define retriever object
     return vectordb.as_retriever()
 
-  
-
 class StreamHandler(BaseCallbackHandler):
-  def __init__(self, container, initial_text=""):
+    def __init__(self, container, initial_text=""):
         self.container = container
         self.text = initial_text
 
-  def on_llm_new_token(self, token: str, **kwargs) -> None:
+    def on_llm_new_token(self, token: str, **kwargs) -> None:
         self.text += token
-        self.container.markdown(self.text)  # ✅ Update UI with streaming text
-
+        self.container.markdown(self.text)
 
 # Creates UI element to accept PDF uploads
 uploaded_files = st.sidebar.file_uploader(
@@ -87,37 +62,22 @@ uploaded_files = st.sidebar.file_uploader(
 if not uploaded_files:
     st.info("Please upload PDF documents to continue.")
     st.stop()
-  
 
 retriever = configure_retriever(uploaded_files)
 
-
 qa_template = """
 Use only the following pieces of context to answer the question at the end. 
 If you don't know the answer, just say you don't know,
-don't try to make up the answer. Keep the asnwer concise and well-structured to make it easy to read
-
-{context}
-
-Question: {question}
-
-"""
-
-qa_template = """
-
-Use only the following pieces of context to answer the question at the end. 
-If you don't know the answer, just say you don't know,
-don't try to make up the answer. Keep the asnwer concise and well-structured to make it easy to read
+don't try to make up the answer. Keep the answer concise and well-structured to make it easy to read
 
 {context}
 
 Question: {question}
 
 Answer: 
-
 """
 
-qa_prompt = ChatPromptTemplate.from_template(get_prompt_plain)
+qa_prompt = ChatPromptTemplate.from_template(qa_template)  # Fixed variable name
 
 def format_docs(docs):
     return "\n\n".join([d.page_content for d in docs])
@@ -125,12 +85,11 @@ def format_docs(docs):
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 gemini = ChatGoogleGenerativeAI(
-    model="gemini-2.0-flash",         # or "gemini-1.5-pro"
+    model="gemini-2.0-flash",
     temperature=0.1,
-    streaming=True
+    streaming=True,
+    google_api_key=os.getenv("GOOGLE_API_KEY")
 )
-
-
 
 from langchain.schema.runnable import RunnableMap
 
@@ -140,10 +99,8 @@ qa_rag_chain = (
         "question": itemgetter("question")
     })
     | qa_prompt
-    | gemini  # Replace with your Gemini client or LLM
+    | gemini
 )
-
-
 
 # Store conversation history in Streamlit session state
 streamlit_msg_history = StreamlitChatMessageHistory(key="langchain_messages")
@@ -157,36 +114,32 @@ for msg in streamlit_msg_history.messages:
     st.chat_message(msg.type).write(msg.content)
 
 # Callback handler which does some post-processing on the LLM response
-# Used to post the top 3 document sources used by the LLM in RAG response
 class PostMessageHandler(BaseCallbackHandler):
     def __init__(self, msg: st.write):
         BaseCallbackHandler.__init__(self)
         self.msg = msg
         self.sources = []
+        
     def on_retriever_end(self, documents, *, run_id, parent_run_id, **kwargs):
-      source_ids = []
-      for d in documents:  # retrieved documents from retriever based on user query
-        metadata = {
-            "source": d.metadata["source"],
-            "page": d.metadata["page"],
-            "content": d.page_content[:200]
-        }
-        idx = (metadata["source"], metadata["page"])
-        if idx not in source_ids:  # store unique source documents
-            source_ids.append(idx)
-            self.sources.append(metadata)
-    
+        source_ids = []
+        for d in documents:
+            metadata = {
+                "source": d.metadata["source"],
+                "page": d.metadata["page"],
+                "content": d.page_content[:200]
+            }
+            idx = (metadata["source"], metadata["page"])
+            if idx not in source_ids:
+                source_ids.append(idx)
+                self.sources.append(metadata)
 
     def on_llm_end(self, response, *, run_id, parent_run_id, **kwargs):
-        
         if len(self.sources):
-            
             st.markdown("__Sources:__" + "\n")
             st.dataframe(
-                data=pd.DataFrame(self.sources[:3]),  # Top 3 sources
+                data=pd.DataFrame(self.sources[:3]),
                 width=1000
             )
-
 
 # If user inputs a new prompt, display it and show the response
 if user_prompt := st.chat_input():
@@ -205,5 +158,3 @@ if user_prompt := st.chat_input():
         
         # Get LLM response
         response = qa_rag_chain.invoke({"question": user_prompt}, config=config)
-
-
