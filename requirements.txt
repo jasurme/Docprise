@@ -7,3 +7,5 @@ faiss-cpu
 pandas
 python-dotenv
 pymupdf
+gspread
+google-auth
