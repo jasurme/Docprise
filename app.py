@@ -20,7 +20,7 @@ os.environ["GOOGLE_API_KEY"] = GEMINI_API_KEY if GEMINI_API_KEY else ""
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY if OPENAI_API_KEY else ""
 
 st.set_page_config(page_title="FileBit: File QA Chatbot", page_icon="🔍")
-st.title("Think Different! Let us handle where your information is")
+st.title("Think Different! Every document holds surprises")
 
 @st.cache_resource(ttl="1h")
 def configure_retriever(uploaded_files):
