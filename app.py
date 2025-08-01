@@ -7,6 +7,7 @@ from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores.chroma import Chroma
 from operator import itemgetter
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 import streamlit as st
 import tempfile
@@ -41,7 +42,10 @@ def configure_retriever(uploaded_files):
 
   
   
-    embeddings_model = CohereEmbeddings(model="embed-english-v3.0")
+    embeddings_model = GoogleGenerativeAIEmbeddings(
+       model="models/embedding-001", 
+       google_api_key=os.getenv("GOOGLE_API_KEY") ) 
+
     vectordb = Chroma.from_documents(doc_chunks, embeddings_model)
 
     retriever = vectordb.as_retriever()
