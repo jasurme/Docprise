@@ -16,7 +16,8 @@ import cohere
 from langchain.embeddings import CohereEmbeddings
 from google import genai
 from google.genai import types
-COHERE_API_KEY = os.getenv("Lnh2ZI1S7VFjIbBuUqQWMI6PNnxtnway1a0CeJXU")
+COHERE_API_KEY = st.secrets.get("COHERE_API_KEY") or os.getenv("COHERE_API_KEY")
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
 
 st.set_page_config(page_title="FileBit: File QA Chatbot", page_icon="🔍")
 
@@ -74,7 +75,7 @@ if not uploaded_files:
 
 retriever = configure_retriever(uploaded_files)
 
-genai_client = genai.Client(api_key="AIzaSyCWcKB572P9vsO3JzVws9m7-qQrnbtnyPI")
+genai_client = genai.Client(api_key=GEMINI_API_KEY)
 
 qa_template = """
 Use only the following pieces of context to answer the question at the end. 
