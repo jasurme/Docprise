@@ -32,38 +32,49 @@ if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())[:8]
 
 # Google Sheets logging function
+# Updated Google Sheets logging function with proper scopes
 def log_to_google_sheets(question, answer, response_time=None):
-    """Log user interactions to Google Sheets"""
+    """Log user interactions to Google Sheets with proper authentication"""
     try:
         # Get credentials from Streamlit secrets
         creds_dict = st.secrets["gcp_service_account"]
+        
+        # Add the correct scopes for Google Sheets and Drive
         credentials = Credentials.from_service_account_info(
             creds_dict,
-            scopes=["https://www.googleapis.com/auth/spreadsheets"]
+            scopes=[
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive.file",
+                "https://www.googleapis.com/auth/drive"
+            ]
         )
         
         # Connect to Google Sheets
         gc = gspread.authorize(credentials)
         
-        # Open the spreadsheet (create if doesn't exist)
+        # Open the spreadsheet (or create if doesn't exist)
         try:
             sheet = gc.open("DocPrise Analytics").sheet1
         except gspread.SpreadsheetNotFound:
-            # Create new spreadsheet
+            # Create new spreadsheet and share it
             spreadsheet = gc.create("DocPrise Analytics")
             sheet = spreadsheet.sheet1
+            
             # Add headers
             sheet.append_row([
                 "Timestamp", "Session_ID", "Question", "Answer", 
                 "Question_Length", "Answer_Length", "Response_Time"
             ])
+            
+            # Make it accessible (optional - makes it viewable by anyone with link)
+            spreadsheet.share('', perm_type='anyone', role='reader')
         
         # Prepare data
         row_data = [
             datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             st.session_state.session_id,
             question,
-            answer[:500] + "..." if len(answer) > 500 else answer,  # Truncate long answers
+            answer[:500] + "..." if len(answer) > 500 else answer,
             len(question),
             len(answer),
             round(response_time, 2) if response_time else None
@@ -72,11 +83,13 @@ def log_to_google_sheets(question, answer, response_time=None):
         # Add row to sheet
         sheet.append_row(row_data)
         
-        
+        # Show success in sidebar
+        st.sidebar.success("✅ Interaction logged!")
         
     except Exception as e:
-        # Fail silently to not break the app
+        # Show detailed error for debugging
         st.sidebar.error(f"❌ Logging failed: {str(e)}")
+        st.sidebar.error(f"Error type: {type(e).__name__}")
 
 @st.cache_resource(ttl="1h")
 def configure_retriever(uploaded_files):
