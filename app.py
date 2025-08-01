@@ -160,14 +160,18 @@ class PostMessageHandler(BaseCallbackHandler):
         if idx not in source_ids:  # store unique source documents
             source_ids.append(idx)
             self.sources.append(metadata)
+    
 
-   def on_llm_end(self, response, *, run_id, parent_run_id, **kwargs):
-     if len(self.sources):
-        st.markdown("__Sources:__" + "\n")
-        st.dataframe(
-            data=pd.DataFrame(self.sources[:3]),  # Top 3 sources
-            width=1000
-        )
+    def on_llm_end(self, response, *, run_id, parent_run_id, **kwargs):
+        
+        if len(self.sources):
+            
+            st.markdown("__Sources:__" + "\n")
+            st.dataframe(
+                data=pd.DataFrame(self.sources[:3]),  # Top 3 sources
+                width=1000
+            )
+
 
 # If user inputs a new prompt, display it and show the response
 if user_prompt := st.chat_input():
