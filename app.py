@@ -1,16 +1,16 @@
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_community.chat_message_histories import StreamlitChatMessageHistory
 from langchain_core.callbacks.base import BaseCallbackHandler
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from operator import itemgetter
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain.schema.runnable import RunnableMap
 
 import streamlit as st
 import tempfile
 import os
-import pandas as pd
 
 # Get API keys
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
@@ -25,9 +25,9 @@ st.title("Think Different! Let us handle where your information is")
 
 @st.cache_resource(ttl="1h")
 def configure_retriever(uploaded_files):
-    # Read documents
     docs = []
     temp_dir = tempfile.TemporaryDirectory()
+    
     for file in uploaded_files:
         temp_filepath = os.path.join(temp_dir.name, file.name)
         with open(temp_filepath, "wb") as f:
@@ -38,7 +38,6 @@ def configure_retriever(uploaded_files):
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=200)
     doc_chunks = text_splitter.split_documents(docs)
 
-    # Use OpenAI embeddings instead - no async issues!
     embeddings_model = OpenAIEmbeddings(
         model="text-embedding-3-small",
         openai_api_key=os.getenv("OPENAI_API_KEY")
@@ -56,9 +55,10 @@ class StreamHandler(BaseCallbackHandler):
         self.text += token
         self.container.markdown(self.text)
 
-# Creates UI element to accept PDF uploads
+# File upload
 uploaded_files = st.sidebar.file_uploader(
-    label="Upload PDF files", type=["pdf"],
+    label="Upload PDF files", 
+    type=["pdf"],
     accept_multiple_files=True
 )
 
@@ -66,18 +66,22 @@ if not uploaded_files:
     st.info("Please upload PDF documents to continue.")
     st.stop()
 
-retriever = configure_retriever(uploaded_files)
+# Configure retriever
+with st.spinner("Processing documents..."):
+    retriever = configure_retriever(uploaded_files)
 
+# QA Template
 qa_template = """
 Use only the following pieces of context to answer the question at the end. 
-If you don't know the answer, just say you don't know,
-don't try to make up the answer. Keep the answer concise and well-structured to make it easy to read
+If you don't know the answer, just say you don't know, don't try to make up the answer. 
+Keep the answer concise and well-structured to make it easy to read.
 
+Context:
 {context}
 
 Question: {question}
 
-Answer: 
+Answer:
 """
 
 qa_prompt = ChatPromptTemplate.from_template(qa_template)
@@ -85,8 +89,7 @@ qa_prompt = ChatPromptTemplate.from_template(qa_template)
 def format_docs(docs):
     return "\n\n".join([d.page_content for d in docs])
 
-from langchain_google_genai import ChatGoogleGenerativeAI
-
+# Initialize Gemini
 gemini = ChatGoogleGenerativeAI(
     model="gemini-2.0-flash",
     temperature=0.1,
@@ -94,8 +97,7 @@ gemini = ChatGoogleGenerativeAI(
     google_api_key=os.getenv("GOOGLE_API_KEY")
 )
 
-from langchain.schema.runnable import RunnableMap
-
+# Create RAG chain
 qa_rag_chain = (
     RunnableMap({
         "context": itemgetter("question") | retriever | format_docs,
@@ -105,59 +107,42 @@ qa_rag_chain = (
     | gemini
 )
 
-# Store conversation history in Streamlit session state
-streamlit_msg_history = StreamlitChatMessageHistory(key="langchain_messages")
+# Initialize chat history
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-# Shows the first message when app starts
-if len(streamlit_msg_history.messages) == 0:
-    streamlit_msg_history.add_ai_message("Please ask your question?")
+# Display chat history
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
-# Render current messages from StreamlitChatMessageHistory
-for msg in streamlit_msg_history.messages:
-    st.chat_message(msg.type).write(msg.content)
-
-# Callback handler which does some post-processing on the LLM response
-class PostMessageHandler(BaseCallbackHandler):
-    def __init__(self, msg: st.write):
-        BaseCallbackHandler.__init__(self)
-        self.msg = msg
-        self.sources = []
+# Chat input
+if prompt := st.chat_input("Ask a question about your documents"):
+    # Add user message to chat history
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    
+    # Display user message
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    
+    # Generate response
+    with st.chat_message("assistant"):
+        response_container = st.empty()
+        stream_handler = StreamHandler(response_container)
         
-    def on_retriever_end(self, documents, *, run_id, parent_run_id, **kwargs):
-        source_ids = []
-        for d in documents:
-            metadata = {
-                "source": d.metadata["source"],
-                "page": d.metadata["page"],
-                "content": d.page_content[:200]
-            }
-            idx = (metadata["source"], metadata["page"])
-            if idx not in source_ids:
-                source_ids.append(idx)
-                self.sources.append(metadata)
-
-    def on_llm_end(self, response, *, run_id, parent_run_id, **kwargs):
-        if len(self.sources):
-            st.markdown("__Sources:__" + "\n")
-            st.dataframe(
-                data=pd.DataFrame(self.sources[:3]),
-                width=1000
-            )
-
-# If user inputs a new prompt, display it and show the response
-if user_prompt := st.chat_input():
-    st.chat_message("human").write(user_prompt)
-
-    # This is where response from the LLM is shown
-    with st.chat_message("ai"):
-        # Initializing an empty data stream
-        stream_handler = StreamHandler(st.empty())
-        
-        # UI element to write RAG sources after LLM response
-        sources_container = st.write("")
-        pm_handler = PostMessageHandler(sources_container)
-        
-        config = {"callbacks": [stream_handler, pm_handler]}
-        
-        # Get LLM response
-        response = qa_rag_chain.invoke({"question": user_prompt}, config=config)
+        with st.spinner("Thinking..."):
+            try:
+                response = qa_rag_chain.invoke(
+                    {"question": prompt}, 
+                    config={"callbacks": [stream_handler]}
+                )
+                
+                # Add assistant response to chat history
+                st.session_state.messages.append({
+                    "role": "assistant", 
+                    "content": stream_handler.text
+                })
+                
+            except Exception as e:
+                st.error(f"Error: {str(e)}")
+                st.info("Please check your API keys and try again.")
