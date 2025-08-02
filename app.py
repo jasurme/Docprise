@@ -16,30 +16,20 @@ import time
 import gspread
 from google.oauth2.service_account import Credentials
 
-# Get API keys
+
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
 OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
 
-# Set environment variables
-os.environ["GOOGLE_API_KEY"] = GEMINI_API_KEY if GEMINI_API_KEY else ""
-os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY if OPENAI_API_KEY else ""
 
-st.set_page_config(page_title="DocPrise: File QA Chatbot", page_icon="🔍")
+st.set_page_config(page_title="DocPrise: Document QA Chatbot", page_icon="🔍")
 st.title("Think Different! Every document holds surprises")
 
-# Generate unique session ID
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())[:8]
-
-# Google Sheets logging function
-# Updated Google Sheets logging function with proper scopes
 def log_to_google_sheets(question, answer, response_time=None):
-    """Log user interactions to Google Sheets with proper authentication"""
+    """Log user interactions to Google sheets"""
     try:
-        # Get credentials from Streamlit secrets
         creds_dict = st.secrets["gcp_service_account"]
-        
-        # Add the correct scopes for Google Sheets and Drive
         credentials = Credentials.from_service_account_info(
             creds_dict,
             scopes=[
@@ -48,28 +38,22 @@ def log_to_google_sheets(question, answer, response_time=None):
                 "https://www.googleapis.com/auth/drive"
             ]
         )
-        
-        # Connect to Google Sheets
         gc = gspread.authorize(credentials)
         
-        # Open the spreadsheet (or create if doesn't exist)
+        
         try:
             sheet = gc.open("DocPrise Analytics").sheet1
         except gspread.SpreadsheetNotFound:
-            # Create new spreadsheet and share it
             spreadsheet = gc.create("DocPrise Analytics")
             sheet = spreadsheet.sheet1
             
-            # Add headers
             sheet.append_row([
                 "Timestamp", "Session_ID", "Question", "Answer", 
                 "Question_Length", "Answer_Length", "Response_Time"
             ])
             
-            # Make it accessible (optional - makes it viewable by anyone with link)
             spreadsheet.share('', perm_type='anyone', role='reader')
-        
-        # Prepare data
+    
         row_data = [
             datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             st.session_state.session_id,
@@ -79,15 +63,10 @@ def log_to_google_sheets(question, answer, response_time=None):
             len(answer),
             round(response_time, 2) if response_time else None
         ]
-        
-        # Add row to sheet
         sheet.append_row(row_data)
-        
-        # Show success in sidebar
         st.sidebar.success("✅ Answered")
         
     except Exception as e:
-        # Show detailed error for debugging
         st.sidebar.error(f"❌ Logging failed: {str(e)}")
         st.sidebar.error(f"Error type: {type(e).__name__}")
 
@@ -129,8 +108,7 @@ if not uploaded_files:
 # Configure retriever
 with st.spinner("Processing documents..."):
     retriever = configure_retriever(uploaded_files)
-
-# QA Template
+    
 qa_template = """
 Use only the following pieces of context to answer the question at the end. 
 If you don't know the answer, just say you don't know, don't try to make up the answer. 
@@ -170,31 +148,25 @@ qa_rag_chain = (
 # Initialize chat history
 if "messages" not in st.session_state:
     st.session_state.messages = []
-
-# Display chat history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
-
-# Chat input with Google Sheets logging
+        
 if prompt := st.chat_input("Ask a question about your documents"):
-    # Add user message to chat history
     st.session_state.messages.append({"role": "user", "content": prompt})
     
-    # Display user message
+ 
     with st.chat_message("user"):
         st.markdown(prompt)
     
-    # Generate response
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
             start_time = time.time()
             
             try:
-                # Get response
+               
                 response = qa_rag_chain.invoke({"question": prompt})
                 
-                # Extract answer
                 if hasattr(response, 'content'):
                     answer = response.content
                 else:
@@ -202,13 +174,13 @@ if prompt := st.chat_input("Ask a question about your documents"):
                 
                 response_time = time.time() - start_time
                 
-                # Display the response
+               
                 st.markdown(answer)
                 
-                # Log to Google Sheets
+               
                 log_to_google_sheets(prompt, answer, response_time)
                 
-                # Add to chat history
+              
                 st.session_state.messages.append({
                     "role": "assistant", 
                     "content": answer
@@ -218,7 +190,7 @@ if prompt := st.chat_input("Ask a question about your documents"):
                 error_msg = f"Sorry, I encountered an error: {str(e)}"
                 st.error(error_msg)
                 
-                # Log error to Google Sheets too
+                
                 log_to_google_sheets(prompt, f"ERROR: {str(e)}", None)
                 
                 st.session_state.messages.append({
